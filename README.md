@@ -15,9 +15,3 @@ Python, Streamlit, Google Gemini API
 
 ## Status
 Version 1 is live. Next: structured notes, quiz difficulty, flashcards, and Ask the Transcript.
-
-![Summary](Summary.png)
-![Key Points](Key points.png)
-![Quiz ](Quiz.png)
-![Quiz ](Quiz.png2)
-![Answer key ](Answekey.png)
