@@ -16,8 +16,8 @@ Python, Streamlit, Google Gemini API
 ## Status
 Version 1 is live. Next: structured notes, quiz difficulty, flashcards, and Ask the Transcript.
 
-![App screenshot](c:\Users\rolly\OneDrive\Pictures\Screenshots 1\Summary.png.png)
-![App screenshot](c:\Users\rolly\OneDrive\Pictures\Screenshots 1\Key points.png.png)
-![App screenshot](c:\Users\rolly\OneDrive\Pictures\Screenshots 1\Quiz.png.png)
-![App screenshot](c:\Users\rolly\OneDrive\Pictures\Screenshots 1\Quiz.png2.png)
-![App screenshot](c:\Users\rolly\OneDrive\Pictures\Screenshots 1\Answekey.png.png)
+![Summary](Summary.png)
+![Key Points](Key points.png)
+![Quiz ](Quiz.png)
+![Quiz ](Quiz.png2)
+![Answer key ](Answekey.png)
