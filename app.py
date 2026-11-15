@@ -62,6 +62,26 @@ def clean_transcript(text):
     text = re.sub(pattern, " ", text)
     return re.sub(r"[ \t]+", " ", text).strip()
 
+def make_flashcards(transcript):
+    """Ask Gemini for question-and-answer flashcards."""
+    prompt = f"""
+You are a study coach. Using ONLY the transcript below, create 8 flashcards
+that help a student revise the most important ideas.
+
+Return ONLY a JSON list of 8 items. Each item must have these keys:
+"front": a short question or term,
+"back": a clear answer in 1-2 simple sentences.
+
+Transcript:
+{transcript}
+"""
+    cards = json.loads(ask_gemini(prompt, as_json=True))
+    if isinstance(cards, dict):
+        cards = next(iter(cards.values()))
+    clean = [c for c in cards if c.get("front") and c.get("back")]
+    if not clean:
+        raise ValueError("The AI returned unusable flashcards. Please try again.")
+    return clean
 
 st.title("📚 YouTube Learning Companion")
 st.caption("Paste a lecture transcript. Get notes, a quiz, and flashcards.")
@@ -118,6 +138,7 @@ Transcript:
                     # New transcript means the old quiz no longer applies
                     st.session_state.pop("quiz", None)
                     st.session_state.pop("quiz_result", None)
+                    st.session_state.pop("cards", None)
                 except Exception as e:
                     st.error("Something went wrong. Please try again in a minute.")
                     st.caption(f"Technical detail: {e}")
@@ -198,4 +219,42 @@ with right:
                         st.success("No weak topics. Nice work!")
 
     with tab_cards:
-        st.info("Flashcards are coming in the next step.")
+        if "transcript" not in st.session_state:
+            st.info("Generate your notes first, then come back here for flashcards.")
+        else:
+            if st.button("Generate flashcards"):
+                with st.spinner("Making your flashcards..."):
+                    try:
+                        st.session_state["cards"] = make_flashcards(
+                            st.session_state["transcript"]
+                        )
+                        st.session_state["card_i"] = 0
+                        st.session_state["show_back"] = False
+                    except Exception as e:
+                        st.error("Could not create flashcards. Please try again.")
+                        st.caption(f"Technical detail: {e}")
+
+            cards = st.session_state.get("cards")
+            if cards:
+                i = st.session_state.get("card_i", 0)
+                card = cards[i]
+                st.caption(f"Card {i + 1} of {len(cards)}")
+                with st.container(border=True):
+                    st.markdown(f"### {card['front']}")
+                    if st.session_state.get("show_back"):
+                        st.divider()
+                        st.markdown(card["back"])
+
+                c1, c2, c3 = st.columns(3)
+                if c1.button("⬅️ Previous", disabled=(i == 0), use_container_width=True):
+                    st.session_state["card_i"] = i - 1
+                    st.session_state["show_back"] = False
+                    st.rerun()
+                label = "Hide answer" if st.session_state.get("show_back") else "Show answer"
+                if c2.button(label, use_container_width=True):
+                    st.session_state["show_back"] = not st.session_state.get("show_back", False)
+                    st.rerun()
+                if c3.button("Next ➡️", disabled=(i == len(cards) - 1), use_container_width=True):
+                    st.session_state["card_i"] = i + 1
+                    st.session_state["show_back"] = False
+                    st.rerun()
