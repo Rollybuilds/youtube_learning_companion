@@ -1,5 +1,8 @@
+import re 
+import json
 import streamlit as st
 from google import genai
+from google.genai import types
 
 st.set_page_config(page_title="YouTube Learning Companion", page_icon="📚", layout="wide")
 
@@ -7,16 +10,57 @@ client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
 MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
 
 
-def ask_gemini(prompt):
+def ask_gemini(prompt, as_json=False):
     """Try each model in order and return the first answer that works."""
+    config = None
+    if as_json:
+        config = types.GenerateContentConfig(response_mime_type="application/json")
     last_error = None
     for name in MODELS:
         try:
-            response = client.models.generate_content(model=name, contents=prompt)
+            response = client.models.generate_content(
+                model=name, contents=prompt, config=config
+            )
             return response.text
         except Exception as e:
             last_error = e
     raise last_error
+
+
+def make_quiz(transcript, difficulty):
+    """Ask Gemini for 5 questions and return them as a clean Python list."""
+    prompt = f"""
+You are an exam coach. Using ONLY the transcript below, write 5 multiple-choice
+questions at {difficulty} difficulty.
+- Easy: simple recall of facts.
+- Medium: understanding of ideas.
+- Hard: applying or comparing ideas.
+
+Return ONLY a JSON list of 5 items. Each item must have these keys:
+"question": the question text,
+"options": a list of exactly 4 answer strings (no A/B/C/D labels),
+"answer_index": the position of the correct option (0 to 3),
+"explanation": 2 sentences on why it is correct and the concept behind it,
+"topic": a 2 to 4 word topic name.
+
+Transcript:
+{transcript}
+"""
+    quiz = json.loads(ask_gemini(prompt, as_json=True))
+    if isinstance(quiz, dict):
+        quiz = next(iter(quiz.values()))
+    clean = [
+        q for q in quiz
+        if len(q.get("options", [])) == 4 and q.get("answer_index") in (0, 1, 2, 3)
+    ]
+    if not clean:
+        raise ValueError("The AI returned an unusable quiz. Please try again.")
+    return clean
+def clean_transcript(text):
+    """Remove YouTube timestamps like '38:4138 minutes, 41 seconds'."""
+    pattern = r"\d{1,2}:\d{2}(?::\d{2})?(?:\d+\s*hours?,?\s*)?(?:\d+\s*minutes?,?\s*)?(?:\d+\s*seconds?)?"
+    text = re.sub(pattern, " ", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
 
 
 st.title("📚 YouTube Learning Companion")
@@ -30,7 +74,14 @@ with left:
         height=350,
         placeholder="Paste your transcript here...",
     )
+    transcript = clean_transcript(transcript)
     st.caption(f"{len(transcript):,} characters")
+
+    MAX_CHARS = 30000
+    if len(transcript) > MAX_CHARS:
+       st.warning("Long transcript: using the first 30,000 characters to keep things fast.")
+       transcript = transcript[:MAX_CHARS]
+
     generate = st.button("Generate study pack", type="primary", use_container_width=True)
 
     if generate:
@@ -64,6 +115,9 @@ Transcript:
                 try:
                     st.session_state["notes"] = ask_gemini(notes_prompt)
                     st.session_state["transcript"] = transcript
+                    # New transcript means the old quiz no longer applies
+                    st.session_state.pop("quiz", None)
+                    st.session_state.pop("quiz_result", None)
                 except Exception as e:
                     st.error("Something went wrong. Please try again in a minute.")
                     st.caption(f"Technical detail: {e}")
@@ -78,7 +132,70 @@ with right:
             st.info("Your notes will appear here.")
 
     with tab_quiz:
-        st.info("Quiz is coming in the next step.")
+        if "transcript" not in st.session_state:
+            st.info("Generate your notes first, then come back here for a quiz.")
+        else:
+            difficulty = st.radio(
+                "Difficulty", ["Easy", "Medium", "Hard"], index=1, horizontal=True
+            )
+            if st.button("Generate quiz"):
+                with st.spinner("Writing your quiz..."):
+                    try:
+                        st.session_state["quiz"] = make_quiz(
+                            st.session_state["transcript"], difficulty
+                        )
+                        st.session_state["quiz_id"] = st.session_state.get("quiz_id", 0) + 1
+                        st.session_state.pop("quiz_result", None)
+                    except Exception as e:
+                        st.error("Could not create the quiz. Please try again.")
+                        st.caption(f"Technical detail: {e}")
+
+            quiz = st.session_state.get("quiz")
+            if quiz:
+                quiz_id = st.session_state["quiz_id"]
+                with st.form(f"quiz_form_{quiz_id}"):
+                    for i, q in enumerate(quiz):
+                        st.radio(
+                            f"**{i + 1}. {q['question']}**",
+                            q["options"],
+                            index=None,
+                            key=f"q_{quiz_id}_{i}",
+                        )
+                    submitted = st.form_submit_button("Submit answers")
+
+                if submitted:
+                    results = []
+                    for i, q in enumerate(quiz):
+                        picked = st.session_state.get(f"q_{quiz_id}_{i}")
+                        correct = q["options"][q["answer_index"]]
+                        results.append({
+                            "picked": picked,
+                            "correct": correct,
+                            "is_correct": picked == correct,
+                            "explanation": q.get("explanation", ""),
+                            "topic": q.get("topic", "General"),
+                        })
+                    st.session_state["quiz_result"] = results
+
+                results = st.session_state.get("quiz_result")
+                if results:
+                    score = sum(r["is_correct"] for r in results)
+                    st.subheader(f"Score: {score}/{len(results)}")
+                    for i, r in enumerate(results):
+                        if r["is_correct"]:
+                            st.success(f"Question {i + 1}: Correct")
+                        else:
+                            st.error(
+                                f"Question {i + 1}: Incorrect. "
+                                f"You chose: {r['picked'] or 'no answer'}. "
+                                f"Correct answer: {r['correct']}"
+                            )
+                        st.caption(r["explanation"])
+                    weak = sorted({r["topic"] for r in results if not r["is_correct"]})
+                    if weak:
+                        st.warning("Topics to revise: " + ", ".join(weak))
+                    else:
+                        st.success("No weak topics. Nice work!")
 
     with tab_cards:
         st.info("Flashcards are coming in the next step.")
