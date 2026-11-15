@@ -82,6 +82,19 @@ Transcript:
     if not clean:
         raise ValueError("The AI returned unusable flashcards. Please try again.")
     return clean
+def answer_question(transcript, question):
+    """Answer a question using only the transcript."""
+    prompt = f"""
+You are a patient tutor. Answer the student's question using ONLY the
+transcript below. Use simple words and keep it under 150 words.
+If the transcript does not cover it, say "This isn't covered in the lecture."
+
+Question: {question}
+
+Transcript:
+{transcript}
+"""
+    return ask_gemini(prompt)
 
 st.title("📚 YouTube Learning Companion")
 st.caption("Paste a lecture transcript. Get notes, a quiz, and flashcards.")
@@ -139,12 +152,13 @@ Transcript:
                     st.session_state.pop("quiz", None)
                     st.session_state.pop("quiz_result", None)
                     st.session_state.pop("cards", None)
+                    st.session_state.pop("chat", None)
                 except Exception as e:
                     st.error("Something went wrong. Please try again in a minute.")
                     st.caption(f"Technical detail: {e}")
 
 with right:
-    tab_notes, tab_quiz, tab_cards = st.tabs(["📝 Notes", "❓ Quiz", "🗂️ Flashcards"])
+    tab_notes, tab_quiz, tab_cards, tab_ask = st.tabs(["📝 Notes", "❓ Quiz", "🗂️ Flashcards", "💬 Ask"])
 
     with tab_notes:
         if "notes" in st.session_state:
@@ -258,3 +272,27 @@ with right:
                     st.session_state["card_i"] = i + 1
                     st.session_state["show_back"] = False
                     st.rerun()
+    with tab_ask:
+        if "transcript" not in st.session_state:
+            st.info("Generate your notes first, then ask questions about the lecture.")
+        else:
+            st.caption("Ask anything about the lecture. Answers come only from your transcript.")
+            with st.form("ask_form", clear_on_submit=True):
+                question = st.text_input(
+                    "Your question", placeholder="Explain this part in simple words..."
+                )
+                asked = st.form_submit_button("Ask")
+
+            if asked and question.strip():
+                with st.spinner("Thinking..."):
+                    try:
+                        answer = answer_question(st.session_state["transcript"], question)
+                        st.session_state.setdefault("chat", []).append((question, answer))
+                    except Exception as e:
+                        st.error("Could not get an answer. Please try again.")
+                        st.caption(f"Technical detail: {e}")
+
+            for q, a in reversed(st.session_state.get("chat", [])):
+                with st.container(border=True):
+                    st.markdown(f"**You:** {q}")
+                    st.markdown(a)
