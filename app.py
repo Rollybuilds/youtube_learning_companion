@@ -1,3 +1,4 @@
+from html import escape
 import re 
 import json
 import streamlit as st
@@ -253,18 +254,26 @@ with right:
                 i = st.session_state.get("card_i", 0)
                 card = cards[i]
                 st.caption(f"Card {i + 1} of {len(cards)}")
-                with st.container(border=True):
-                    st.markdown(f"### {card['front']}")
-                    if st.session_state.get("show_back"):
-                        st.divider()
-                        st.markdown(card["back"])
-
+                showing_back = st.session_state.get("show_back", False)
+                text = escape(card["back"] if showing_back else card["front"])
+                tag = "ANSWER" if showing_back else "QUESTION"
+                bg = "#EEF2FF" if showing_back else "#4F46E5"
+                fg = "#1F2937" if showing_back else "#FFFFFF"
+                st.markdown(
+                    f"""
+<div style="background:{bg};color:{fg};border-radius:20px;padding:48px 28px;min-height:220px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;box-shadow:0 6px 18px rgba(79,70,229,0.18);">
+<div style="font-size:12px;letter-spacing:2px;opacity:0.7;margin-bottom:14px;">{tag}</div>
+<div style="font-size:22px;font-weight:600;line-height:1.4;">{text}</div>
+</div>
+""",
+                    unsafe_allow_html=True,
+                )
                 c1, c2, c3 = st.columns(3)
                 if c1.button("⬅️ Previous", disabled=(i == 0), use_container_width=True):
                     st.session_state["card_i"] = i - 1
                     st.session_state["show_back"] = False
                     st.rerun()
-                label = "Hide answer" if st.session_state.get("show_back") else "Show answer"
+                label = "🔄 Flip card"
                 if c2.button(label, use_container_width=True):
                     st.session_state["show_back"] = not st.session_state.get("show_back", False)
                     st.rerun()
