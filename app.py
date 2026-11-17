@@ -1,3 +1,4 @@
+import time
 from html import escape
 import re 
 import json
@@ -7,26 +8,32 @@ from google.genai import types
 
 st.set_page_config(page_title="YouTube Learning Companion", page_icon="📚", layout="wide")
 
-client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+client = genai.Client(
+    api_key=st.secrets["GEMINI_API_KEY"],
+    http_options=types.HttpOptions(timeout=45000),
+)
 MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
 
 
 def ask_gemini(prompt, as_json=False):
-    """Try each model in order and return the first answer that works."""
+    """Try each model in order, and record how long each attempt took."""
     config = None
     if as_json:
         config = types.GenerateContentConfig(response_mime_type="application/json")
-    last_error = None
+    log = []
     for name in MODELS:
+        start = time.time()
         try:
             response = client.models.generate_content(
                 model=name, contents=prompt, config=config
             )
+            log.append(f"{name}: OK in {time.time() - start:.1f}s")
+            st.session_state["timing_log"] = log
             return response.text
         except Exception as e:
-            last_error = e
-    raise last_error
-
+            log.append(f"{name}: failed after {time.time() - start:.1f}s ({str(e)[:80]})")
+    st.session_state["timing_log"] = log
+    raise RuntimeError("All models failed. " + " | ".join(log))
 
 def make_quiz(transcript, difficulty):
     """Ask Gemini for 5 questions and return them as a clean Python list."""
@@ -273,7 +280,7 @@ with right:
                     st.session_state["card_i"] = i - 1
                     st.session_state["show_back"] = False
                     st.rerun()
-                label = "🔄 Flip card"
+                label = "🔄 Flip card"+
                 if c2.button(label, use_container_width=True):
                     st.session_state["show_back"] = not st.session_state.get("show_back", False)
                     st.rerun()
@@ -305,3 +312,7 @@ with right:
                 with st.container(border=True):
                     st.markdown(f"**You:** {q}")
                     st.markdown(a)
+    if "timing_log" in st.session_state:
+        with st.expander("⏱️ Speed details"):
+            for line in st.session_state["timing_log"]:
+                st.write(line)
