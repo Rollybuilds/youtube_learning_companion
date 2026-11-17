@@ -280,7 +280,7 @@ with right:
                     st.session_state["card_i"] = i - 1
                     st.session_state["show_back"] = False
                     st.rerun()
-                label = "🔄 Flip card"+
+                label = "🔄 Flip card"
                 if c2.button(label, use_container_width=True):
                     st.session_state["show_back"] = not st.session_state.get("show_back", False)
                     st.rerun()
