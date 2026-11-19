@@ -12,26 +12,31 @@ client = genai.Client(
     api_key=st.secrets["GEMINI_API_KEY"],
     http_options=types.HttpOptions(timeout=45000),
 )
-MODELS = ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"]
-
+MODELS = ["gemini-3.5-flash-lite", "gemini-3.1-flash-lite", "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.8-flash"]
 
 def ask_gemini(prompt, as_json=False):
-    """Try each model in order, and record how long each attempt took."""
+    """Try each model in order. Retry briefly when Google says 'busy' (503)."""
     config = None
     if as_json:
         config = types.GenerateContentConfig(response_mime_type="application/json")
     log = []
     for name in MODELS:
-        start = time.time()
-        try:
-            response = client.models.generate_content(
-                model=name, contents=prompt, config=config
-            )
-            log.append(f"{name}: OK in {time.time() - start:.1f}s")
-            st.session_state["timing_log"] = log
-            return response.text
-        except Exception as e:
-            log.append(f"{name}: failed after {time.time() - start:.1f}s ({str(e)[:80]})")
+        for attempt in range(2):
+            start = time.time()
+            try:
+                response = client.models.generate_content(
+                    model=name, contents=prompt, config=config
+                )
+                log.append(f"{name}: OK in {time.time() - start:.1f}s")
+                st.session_state["timing_log"] = log
+                return response.text
+            except Exception as e:
+                log.append(f"{name}: failed after {time.time() - start:.1f}s ({str(e)[:80]})")
+                busy = "503" in str(e) or "UNAVAILABLE" in str(e)
+                if busy and attempt == 0:
+                    time.sleep(3)
+                    continue
+                break
     st.session_state["timing_log"] = log
     raise RuntimeError("All models failed. " + " | ".join(log))
 
@@ -118,10 +123,10 @@ with left:
     transcript = clean_transcript(transcript)
     st.caption(f"{len(transcript):,} characters")
 
-    MAX_CHARS = 30000
+    MAX_CHARS = 12000
     if len(transcript) > MAX_CHARS:
-       st.warning("Long transcript: using the first 30,000 characters to keep things fast.")
-       transcript = transcript[:MAX_CHARS]
+        st.warning("Long transcript: using the first 12,000 characters to keep things fast.")
+        transcript = transcript[:MAX_CHARS]
 
     generate = st.button("Generate study pack", type="primary", use_container_width=True)
 
